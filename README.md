@@ -7,15 +7,47 @@ This repository mimics the spirit of [`perun-examples`](https://github.com/perun
 
 ## Repository layout
 
-- `examples/multiledger-channel`: demo scenario and implementation notes for a direct multi-ledger channel
-- `examples/multiledger-virtual-channel`: demo scenario and implementation notes for a multi-ledger virtual channel
+Each scenario ships its own self-contained devnet (`chain1/`, `chain2/` next
+to its `go.mod`) so its Hardhat configuration matches its intent:
 
-## Goal
+- **`multiledger-channel/`** uses 5 s + 5 s — symmetric real-time blocks for
+  the honest baseline.
+- **`multiledger-attack/`** uses **5 s (chain A) + 500 ms (chain B)** —
+  deliberately asymmetric. The skew is what enables the divergent-settlement
+  attack to land even when the honest victim runs a watcher; see that
+  module's README for the timing analysis.
+- **`multiledger-defended/`** uses 500 ms + 500 ms (symmetric, fast) and a
+  short challenge duration so the protected flow completes in ~15 seconds.
+  The coordinator's protection logic is independent of block-time skew, so
+  fast/symmetric is just for demo ergonomics.
 
-Provide a small, practical playground to iterate on multi-ledger channel flows before turning them into complete runnable examples.
+Per-scenario devnets also mean you can run each scenario from a fresh chain
+state without restarting nodes between unrelated demos.
 
-## Next steps
+| Directory                                                 | What it shows                                                  | Coordinator?                                                                  | Run time |
+| --------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------- |
+| [`multiledger-channel/`](multiledger-channel/README.md)   | Honest atomic swap                                             | No                                                                            | ~5 s     |
+| [`multiledger-attack/`](multiledger-attack/README.md)     | Divergent-settlement attack succeeds against an honest watcher | No                                                                            | ~35 s    |
+| [`multiledger-defended/`](multiledger-defended/README.md) | Coordinator prevents divergence                                | Yes (in-process via `cross-chain-coordinator/backends.SetupMultiCoordinator`) | ~10–20 s |
+| `multiledger-virtual-channel/`                            | (Placeholder for the virtual-channel flow)                     | —                                                                             | —        |
 
-1. Implement runnable nodes and a coordinator for the direct multiledger channel demo.
-2. Add an intermediary-assisted virtual channel flow across two ledgers.
-3. Add scripted demo runs and expected output traces, similar to `perun-examples`.
+The attack model and coordinator design are documented in
+[`MULTILEDGER_ATTACK_POC.md`](MULTILEDGER_ATTACK_POC.md).
+
+## Quick start
+
+Start a scenario's own pair of Hardhat nodes, then run its Go entry point.
+The chains do not need to stay up between scenarios — each scenario deploys
+fresh PerunToken / Adjudicator / AssetHolder contracts at startup.
+
+```bash
+# Pick ONE scenario at a time. Example: the attack PoC.
+cd multiledger-attack/chain1 && npm install && npx hardhat node --port 8545   # terminal 1
+cd multiledger-attack/chain2 && npm install && npx hardhat node --port 8546   # terminal 2
+cd multiledger-attack && go run .                                              # terminal 3
+```
+
+Repeat with the relevant `chain1/`/`chain2/` directory for `multiledger-channel`
+or `multiledger-defended`. No external network access is required — both the
+attack and the coordinator-defended demos run entirely against the local
+Hardhat nodes.

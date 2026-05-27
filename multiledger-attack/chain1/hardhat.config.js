@@ -1,0 +1,40 @@
+// Chain A for the divergent-settlement attack PoC.
+//
+// Slow block production (5 s auto-mine interval). Chain A is the "slow
+// L1-like" ledger where Bob commits the secret v2. Paired with chain2's
+// fast 500 ms cadence, this skew ensures the chain A dispute window for
+// Alice's watcher-replicated v1 closes meaningfully later than chain B's
+// own dispute window — giving Bob enough margin to register v2 on chain A
+// after waiting for chain B's timeout. Do not shorten this interval.
+export default {
+  solidity: "0.8.28",
+  networks: {
+    hardhat: {
+      type: "edr-simulated",
+      chainId: 1337,
+      accounts: [
+        {
+          privateKey: "0x79ea8f62d97bc0591a4224c1725fca6b00de5b2cea286fe2e0bb35c5e76be46e",
+          balance: "10000000000000000000"
+        },
+        {
+          privateKey: "0x1af2e950272dd403de7a5760d41c6e44d92b6d02797e51810795ff03cc2cda4f",
+          balance: "10000000000000000000"
+        },
+        {
+          privateKey: "0xf63d7d8e930bccd74e93cf5662fde2c28fd8be95edb70c73f1bdd863d07f412e",
+          balance: "10000000000000000000"
+        },
+        {
+          privateKey: "0x1c8e5b9a7c3d2e4f8a1b2c3d4e5f67890abcdef1234567890abcdef123456789",
+          balance: "10000000000000000000"
+        }
+      ],
+      blockGasLimit: 12000000,
+      mining: {
+        auto: true,
+        interval: 5000
+      }
+    }
+  }
+};
