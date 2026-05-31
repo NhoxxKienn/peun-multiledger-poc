@@ -20,6 +20,12 @@ to its `go.mod`) so its Hardhat configuration matches its intent:
   short challenge duration so the protected flow completes in ~15 seconds.
   The coordinator's protection logic is independent of block-time skew, so
   fast/symmetric is just for demo ergonomics.
+- **`multiledger-virtual-optimistic/`** uses 500 ms + 500 ms (symmetric, fast)
+  — a multi-ledger virtual channel (Alice–Bob) routed through an intermediary
+  Hub, settled either cooperatively or via on-chain dispute.
+- **`multiledger-virtual-coordinated/`** uses 500 ms + 500 ms (symmetric, fast)
+  — the same virtual-channel topology, but the parents and the virtual carry a
+  trusted coordinator that co-signs the dispute resolution across both chains.
 
 Per-scenario devnets also mean you can run each scenario from a fresh chain
 state without restarting nodes between unrelated demos.
@@ -29,7 +35,8 @@ state without restarting nodes between unrelated demos.
 | [`multiledger-channel/`](multiledger-channel/README.md)   | Honest atomic swap                                             | No                                                                            | ~5 s     |
 | [`multiledger-attack/`](multiledger-attack/README.md)     | Divergent-settlement attack succeeds against an honest watcher | No                                                                            | ~35 s    |
 | [`multiledger-defended/`](multiledger-defended/README.md) | Coordinator prevents divergence                                | Yes (in-process via `cross-chain-coordinator/backends.SetupMultiCoordinator`) | ~10–20 s |
-| `multiledger-virtual-channel/`                            | (Placeholder for the virtual-channel flow)                     | —                                                                             | —        |
+| [`multiledger-virtual-optimistic/`](multiledger-virtual-optimistic/README.md) | Virtual channel via Hub: cooperative or on-chain dispute (`-mode=`) | No                                                                       | ~10–15 s |
+| [`multiledger-virtual-coordinated/`](multiledger-virtual-coordinated/README.md) | Virtual channel via Hub: coordinator co-signs the cross-chain dispute | Yes (in-process via `cross-chain-coordinator/backends.SetupMultiCoordinator`) | ~15–20 s |
 
 The attack model and coordinator design are documented in
 [`MULTILEDGER_ATTACK_POC.md`](MULTILEDGER_ATTACK_POC.md).

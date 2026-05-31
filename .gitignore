@@ -28,8 +28,8 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
 
 # Hardhat devnet artifacts — apply to every demo's chain1/ and chain2/.
 # No trailing slash on node_modules / package-lock.json so symlinked copies
@@ -40,6 +40,13 @@ package-lock.json
 .npm/
 artifacts/
 cache/
+
+multiledger-defended/multiledger-defended
+multiledger-channel/multiledger-channel
+multiledger-attack/multiledger-attack
+multiledger-virtual-coordinated/multiledger-virtual-coordinated 
+multiledger-virtual-optimistic/multiledger-virtual-optimistic 
+
 
 # AI assistants — session state, configs, and per-project instruction files
 .claude/

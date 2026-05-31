@@ -13,23 +13,35 @@ client library. The defended scenario dials a separately-running
 
 ## Table of Contents
 
-1. [Background](#1-background)
-2. [Attack model](#2-attack-model)
-3. [Coordinator protection model](#3-coordinator-protection-model)
-4. [Prerequisites](#4-prerequisites)
-5. [Project layout](#5-project-layout)
-6. [Hardhat chain setup](#6-hardhat-chain-setup)
-7. [Running the coordinator service](#7-running-the-coordinator-service)
-8. [Contract reference](#8-contract-reference)
-9. [Go module setup](#9-go-module-setup)
-10. [PoC implementation](#10-poc-implementation)
-    - 10.1 [Chain helpers](#101-chain-helpers)
-    - 10.2 [Participant setup with coordinator notifier](#102-participant-setup-with-coordinator-notifier)
-    - 10.3 [Helper: `buildSecretSignedReq`](#103-helper-buildsecretsignedreq)
-    - 10.4 [Attack test — no coordinator](#104-attack-test--no-coordinator)
-    - 10.5 [Defended test — coordinator over libp2p](#105-defended-test--coordinator-over-libp2p)
-11. [Running the PoC](#11-running-the-poc)
-12. [Key invariants](#12-key-invariants)
+- [Multi-Ledger Divergent-Settlement Attack — PoC Handover](#multi-ledger-divergent-settlement-attack--poc-handover)
+  - [Table of Contents](#table-of-contents)
+  - [1. Background](#1-background)
+  - [2. Attack model](#2-attack-model)
+    - [Balance setup](#balance-setup)
+    - [Steps](#steps)
+  - [3. Coordinator protection model](#3-coordinator-protection-model)
+  - [4. Prerequisites](#4-prerequisites)
+  - [5. Project layout](#5-project-layout)
+  - [6. Hardhat chain setup](#6-hardhat-chain-setup)
+    - [`hardhat/hardhat.config.js`](#hardhathardhatconfigjs)
+    - [`hardhat/scripts/deploy.js`](#hardhatscriptsdeployjs)
+    - [Advancing time in tests](#advancing-time-in-tests)
+  - [7. Running the coordinator service](#7-running-the-coordinator-service)
+    - [7.1 Programmatic API (`cross-chain-coordinator/service`)](#71-programmatic-api-cross-chain-coordinatorservice)
+    - [7.2 Configuration shape (`backends.BackendCoordinatorConfig`)](#72-configuration-shape-backendsbackendcoordinatorconfig)
+    - [7.3 Production CLI (optional)](#73-production-cli-optional)
+  - [8. Contract reference](#8-contract-reference)
+  - [9. Go module setup](#9-go-module-setup)
+  - [10. PoC implementation](#10-poc-implementation)
+    - [10.1 Chain helpers](#101-chain-helpers)
+    - [10.2 Participant setup with coordinator notifier](#102-participant-setup-with-coordinator-notifier)
+    - [10.3 Helper: `buildSecretSignedReq`](#103-helper-buildsecretsignedreq)
+    - [10.4 Attack test — no coordinator](#104-attack-test--no-coordinator)
+    - [10.5 Defended test — coordinator over libp2p](#105-defended-test--coordinator-over-libp2p)
+  - [11. Running the PoC](#11-running-the-poc)
+    - [Expected output](#expected-output)
+  - [12. Key invariants](#12-key-invariants)
+    - [Timing diagram (defended scenario)](#timing-diagram-defended-scenario)
 
 ---
 
@@ -118,12 +130,12 @@ coordinates v2 on both chains so the payout is uniform.
 
 ## 4. Prerequisites
 
-| Tool          | Version           | Purpose                                                  |
-| ------------- | ----------------- | -------------------------------------------------------- |
-| Go            | ≥ 1.24            | PoC implementation                                       |
-| Node.js       | ≥ 18              | Hardhat                                                  |
-| Hardhat       | ≥ 2.22            | Two local EVM chains                                     |
-| solc          | ≥ 0.8.15          | Compile contracts (`pragma solidity ^0.8.15`)            |
+| Tool    | Version  | Purpose                                       |
+| ------- | -------- | --------------------------------------------- |
+| Go      | ≥ 1.24   | PoC implementation                            |
+| Node.js | ≥ 18     | Hardhat                                       |
+| Hardhat | ≥ 2.22   | Two local EVM chains                          |
+| solc    | ≥ 0.8.15 | Compile contracts (`pragma solidity ^0.8.15`) |
 
 Go dependencies:
 
@@ -399,14 +411,14 @@ behave as normal single-ledger channels.
 
 Key revert reasons (raised through `errors.Wrapf(ErrTxFailed, ...)`):
 
-| Check | Revert message |
-|---|---|
-| `coordinate()` requires prior `register()`              | `"not registered"` |
-| `coordinate()` requires `block.timestamp ≥ timeout`    | `"refutation timeout not passed"` |
-| `coordinate()` requires valid coordinator ECDSA sig    | `"invalid coordinator signature"` |
-| `coordinate()` requires state version ≥ stored version | `"invalid version"` |
-| `register()` in COORDINATED phase                       | `"incorrect phase"` |
-| Multi-ledger `conclude()` without coordination          | `"coordinated settlement required"` |
+| Check                                                  | Revert message                      |
+| ------------------------------------------------------ | ----------------------------------- |
+| `coordinate()` requires prior `register()`             | `"not registered"`                  |
+| `coordinate()` requires `block.timestamp ≥ timeout`    | `"refutation timeout not passed"`   |
+| `coordinate()` requires valid coordinator ECDSA sig    | `"invalid coordinator signature"`   |
+| `coordinate()` requires state version ≥ stored version | `"invalid version"`                 |
+| `register()` in COORDINATED phase                      | `"incorrect phase"`                 |
+| Multi-ledger `conclude()` without coordination         | `"coordinated settlement required"` |
 
 ---
 
@@ -1124,18 +1136,18 @@ honest highest version and the coordinator locks both chains to it uniformly.
 
 ## 12. Key invariants
 
-| Layer            | Invariant                                                         | Enforcement                                                 |
-| ---------------- | ----------------------------------------------------------------- | ----------------------------------------------------------- |
-| Contract         | `coordinate()` requires prior `register()`                        | `coordinateSingle`: `"not registered"`                      |
-| Contract         | `coordinate()` requires `block.timestamp ≥ dispute.timeout`       | `coordinateSingle`: `"refutation timeout not passed"`       |
-| Contract         | Coordinator ECDSA sig required                                    | `Channel.validateCoordinatorSignature`                      |
-| Contract         | `register()` rejected in `COORDINATED` phase                      | `registerSingle`: `"incorrect phase"`                       |
-| Contract         | Multi-ledger `conclude()` requires `COORDINATED`                  | `concludeSingle`: `"coordinated settlement required"`       |
-| Contract         | Coordinator-eligible requires `coordinator != 0 && multiLedger`   | `MultiLedger.sol: isCoordinatedEligible`                    |
-| go-perun (multi) | All chains coordinated concurrently; first error reported         | `multi.Coordinator.dispatch` (errgroup)                     |
-| go-perun (client)| `Settle` calls `ensureCoordinated` before `Withdraw`              | `client.Channel.Settle`                                     |
-| go-perun (watcher)| Dispute replicated to all chains                                 | `watcher/local` multi-ledger path                           |
-| Timing           | All timeouts use `block.timestamp` (seconds)                      | `Adjudicator.sol` (use `evm_increaseTime` in tests)         |
+| Layer              | Invariant                                                       | Enforcement                                           |
+| ------------------ | --------------------------------------------------------------- | ----------------------------------------------------- |
+| Contract           | `coordinate()` requires prior `register()`                      | `coordinateSingle`: `"not registered"`                |
+| Contract           | `coordinate()` requires `block.timestamp ≥ dispute.timeout`     | `coordinateSingle`: `"refutation timeout not passed"` |
+| Contract           | Coordinator ECDSA sig required                                  | `Channel.validateCoordinatorSignature`                |
+| Contract           | `register()` rejected in `COORDINATED` phase                    | `registerSingle`: `"incorrect phase"`                 |
+| Contract           | Multi-ledger `conclude()` requires `COORDINATED`                | `concludeSingle`: `"coordinated settlement required"` |
+| Contract           | Coordinator-eligible requires `coordinator != 0 && multiLedger` | `MultiLedger.sol: isCoordinatedEligible`              |
+| go-perun (multi)   | All chains coordinated concurrently; first error reported       | `multi.Coordinator.dispatch` (errgroup)               |
+| go-perun (client)  | `Settle` calls `ensureCoordinated` before `Withdraw`            | `client.Channel.Settle`                               |
+| go-perun (watcher) | Dispute replicated to all chains                                | `watcher/local` multi-ledger path                     |
+| Timing             | All timeouts use `block.timestamp` (seconds)                    | `Adjudicator.sol` (use `evm_increaseTime` in tests)   |
 
 ### Timing diagram (defended scenario)
 

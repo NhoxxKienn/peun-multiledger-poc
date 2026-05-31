@@ -62,6 +62,8 @@ type SwapClient struct {
 	lastChannel   *client.Channel                     // Last opened or accepted channel (for tests/attack flow).
 	channelsByID  map[channel.ID]*client.Channel      // Indexed lookup for multi-channel flows (virtual demos).
 	channelsByIDM sync.Mutex                          // Guards channelsByID against concurrent OpenChannel / HandleProposal.
+	watching      map[channel.ID]struct{}             // Set of channel IDs already handed to a watcher (dedup).
+	watchingM     sync.Mutex                          // Guards watching.
 	acceptAll     bool                                // When true, accept any 2-party proposal and any update (attack/defended/virtual flows).
 	autoWatch     bool                                // When true, automatically Watch() every opened/accepted channel (default behavior).
 	challengeDur  uint64                              // On-chain challenge duration in seconds; default 10. Set via SetChallengeDuration.
@@ -183,10 +185,30 @@ func SetupSwapClient(
 		adjudicators: adjs,
 		coordinator:  coordMap,
 		channelsByID: make(map[channel.ID]*client.Channel),
+		watching:     make(map[channel.ID]struct{}),
 		acceptAll:    acceptAll,
 		autoWatch:    autoWatch,
 		challengeDur: 10, // default; callers may override via SetChallengeDuration before OpenChannel.
 	}
+
+	// Auto-watch virtual / sub-channels the moment the Perun client adds them to
+	// its registry. The proposer and acceptor of a virtual channel already start
+	// a watcher on their own handle, but an intermediary Hub receives its proxy
+	// view through the internal persistVirtualChannel path (no explicit handle),
+	// so without this hook the Hub never watches the virtual sub-channel. When a
+	// multi-ledger parent is later re-registered for cross-ledger sync, the
+	// watcher's retrieveLatestSubStates then cannot supply the sub-channel state
+	// and a nil-Params SignedState reaches the eth adjudicator (panic in
+	// ToEthParams). Ledger channels are skipped here — they are watched by the
+	// explicit OpenChannel / HandleProposal paths, preserving their exact timing
+	// for the honest / attack / defended demos. startWatching dedups so the
+	// proposer's / acceptor's own virtual watch is not started twice.
+	perunClient.OnNewChannel(func(ch *client.Channel) {
+		if c.autoWatch && !ch.IsLedgerChannel() {
+			c.startWatching(ch)
+		}
+	})
+
 	go perunClient.Handle(c, c)
 
 	return c, nil
@@ -272,6 +294,17 @@ func (c *SwapClient) OpenVirtualChannel(
 	initAlloc := channel.NewAllocation(2, []wallet.BackendID{1, 1}, c.currencies[0], c.currencies[1])
 	initAlloc.Balances = balances
 
+	// Carry the coordinator into the virtual channel's params when one is
+	// configured. The eth Adjudicator's coordinateSingle path requires every
+	// channel it settles — including the virtual sub-channel — to have a
+	// coordinator (MultiLedger.canEnterCoordinated checks params.coordinator);
+	// without it the on-chain coordinated dispute reverts "incorrect phase".
+	// The optimistic demo leaves c.coordinator nil, so its virtual stays
+	// coordinator-free and follows the plain dispute path.
+	var opts []client.ProposalOpts
+	if c.coordinator != nil {
+		opts = append(opts, client.WithCoordinator(c.coordinator))
+	}
 	proposal, err := client.NewVirtualChannelProposal(
 		c.challengeDur,
 		c.account,
@@ -279,6 +312,7 @@ func (c *SwapClient) OpenVirtualChannel(
 		participants,
 		parents,
 		indexMaps,
+		opts...,
 	)
 	if err != nil {
 		panic(err)
@@ -326,8 +360,18 @@ func (c *SwapClient) SetChallengeDuration(seconds uint64) {
 	c.challengeDur = seconds
 }
 
-// startWatching starts the dispute watcher for the specified channel.
+// startWatching starts the dispute watcher for the specified channel. It is
+// idempotent: a channel watched once (whether via an explicit Open/Accept path
+// or the OnNewChannel hook) is never handed to a second watcher goroutine.
 func (c *SwapClient) startWatching(ch *client.Channel) {
+	c.watchingM.Lock()
+	if _, ok := c.watching[ch.ID()]; ok {
+		c.watchingM.Unlock()
+		return
+	}
+	c.watching[ch.ID()] = struct{}{}
+	c.watchingM.Unlock()
+
 	go func() {
 		err := ch.Watch(c)
 		if err != nil {
