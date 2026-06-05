@@ -74,14 +74,17 @@ func deployContracts(chains []client.ChainConfig, fundedAddrs []common.Address) 
 
 // setupSwapClient builds a SwapClient for the optimistic virtual-channel PoC.
 // acceptAll=true is required so the Hub accepts both ledger parent proposals
-// and the relayed virtual-channel proposal; autoWatch=true so each participant
-// runs a watcher on every channel it holds — including the Hub on both parent
-// views — and the on-chain dispute propagates across chains through them.
+// and the relayed virtual-channel proposal. autoWatch is true for the
+// cooperative/onchain flows (each participant runs a watcher on every channel it
+// holds, so the on-chain dispute propagates across chains through them) and
+// false for -mode=attack (a watcher would re-sync the two chains to one virtual
+// version, erasing the divergence the attack depends on).
 func setupSwapClient(
 	bus wire.Bus,
 	privateKey string,
 	chains [2]client.ChainConfig,
 	waddress wire.Address,
+	autoWatch bool,
 ) *client.SwapClient {
 	k, err := crypto.HexToECDSA(privateKey)
 	if err != nil {
@@ -99,7 +102,7 @@ func setupSwapClient(
 		nil,              // no coordinator notifier
 		common.Address{}, // no coordinator address
 		true,             // acceptAll — Hub must accept ledger + virtual proposals; participants accept asymmetric balances
-		true,             // autoWatch — every participant watches all its channels
+		autoWatch,        // watch all channels (cooperative/onchain); disabled for the attack's divergent register
 	)
 	if err != nil {
 		panic(err)

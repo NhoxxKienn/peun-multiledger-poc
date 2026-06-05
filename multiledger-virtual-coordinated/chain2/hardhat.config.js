@@ -1,7 +1,7 @@
 // Chain B for the coordinated multi-ledger virtual-channel PoC.
 //
-// Mirror of chain1 but with chainID 1338 (port 8546). 500 ms auto-mine. Five
-// pre-funded accounts: deployer, Alice, Bob, Hub, Charlie (the coordinator).
+// chainID 1338 (port 8546). 500 ms auto-mine. Five pre-funded accounts:
+// deployer, Alice, Bob, Hub, Charlie (the coordinator).
 export default {
   solidity: "0.8.28",
   networks: {

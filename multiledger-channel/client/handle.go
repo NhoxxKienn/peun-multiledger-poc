@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/big"
 
 	"perun.network/go-perun/channel"
 	"perun.network/go-perun/client"
@@ -26,8 +25,8 @@ import (
 
 // HandleProposal is the callback for incoming channel proposals.
 //
-// Ledger channel proposals follow the strict swap validation when acceptAll=false
-// (honest demo) and the relaxed validation when acceptAll=true (attack/defended).
+// Ledger channel proposals are accepted as long as they are well-formed 2-party
+// proposals over the expected assets (both parties may fund both chains).
 // Virtual channel proposals are only accepted when acceptAll=true (used by the
 // 3-party virtual-channel demos).
 func (c *SwapClient) HandleProposal(p client.ChannelProposal, r *client.ProposalResponder) {
@@ -55,15 +54,10 @@ func (c *SwapClient) handleLedgerProposal(lcp *client.LedgerChannelProposalMsg, 
 			return fmt.Errorf("Invalid assets: %v", err)
 		}
 
-		// In the honest swap demo the peer (Bob) only funds chain B (idx=0,
-		// peer-side balance must be zero). Attack, defended, and virtual
-		// scenarios use asymmetric funding on both chains, so skip this check.
-		if !c.acceptAll {
-			const assetIdx, peerIdx = 0, 1
-			if lcp.FundingAgreement[assetIdx][peerIdx].Cmp(big.NewInt(0)) != 0 {
-				return fmt.Errorf("Invalid funding balance")
-			}
-		}
+		// Both parties may fund both chains (symmetric funding), which is what
+		// lets a cross-chain swap settle on every chain. We accept any well-formed
+		// 2-party proposal over the expected assets; go-perun still validates that
+		// the funding agreement is consistent with the balances.
 		return nil
 	}()
 	if err != nil {

@@ -1,9 +1,8 @@
 // Chain A for the coordinated multi-ledger virtual-channel PoC.
 //
-// 500 ms auto-mine interval (matches multiledger-defended/) so dispute windows
-// resolve quickly once block.timestamp passes the deadline. Five pre-funded
-// accounts: deployer, Alice, Bob, Hub, and Charlie (the trusted coordinator,
-// who must hold ETH to pay gas for the on-chain Coordinate transactions).
+// 500 ms auto-mine interval so dispute windows resolve quickly once
+// block.timestamp passes the deadline. Five pre-funded accounts: deployer, Alice,
+// Bob, Hub, and Charlie (the coordinator, who pays gas for Coordinate txs).
 export default {
   solidity: "0.8.28",
   networks: {

@@ -6,7 +6,9 @@ Mirrors the upstream reference test
 `NhoxxKienn/go-perun/client/test/multiledger_virtual_coordinate.go`
 (`TestMultiLedgerVirtualCoordinate`), executed against real chains instead of
 `MockBackend`. There is **no attacker** — this is the honest coordinated-dispute
-happy path.
+happy path. (For the coordinator actively *preventing* the
+stale-state-on-virtual attack with honest watchtowers on, see the CKB↔ETH
+[`virtual-ckb-eth-coordinated/`](../virtual-ckb-eth-coordinated/README.md).)
 
 ## Topology
 

@@ -28,6 +28,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"math/big"
@@ -64,11 +65,15 @@ const (
 	keyCoordinator = "1c8e5b9a7c3d2e4f8a1b2c3d4e5f67890abcdef1234567890abcdef123456789"
 
 	initialTokenAmount = 100
-	challengeDuration  = 5
+	challengeDuration  = 5 // per-channel dispute window (seconds), both chains.
 	settleTimeout      = 2 * time.Minute
 )
 
 func main() {
+	flag.Parse()
+	// All parties run their watchtowers — the coordinated dispute happy path.
+	const autoWatch = true
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -108,9 +113,9 @@ func main() {
 	hubDialer.Register(map[wallet.BackendID]wire.Address{ewallet.BackendID: bobWire.Address()}, bobWire.ID().String())
 
 	log.Println("Setting up Alice, Bob, Hub with coordinator address in parent params.")
-	alice := setupSwapClient(aliceBus, keyAlice, chains, aliceWire.Address(), charlieAddr)
-	bob := setupSwapClient(bobBus, keyBob, chains, bobWire.Address(), charlieAddr)
-	hub := setupSwapClient(hubBus, keyHub, chains, hubWire.Address(), charlieAddr)
+	alice := setupSwapClient(aliceBus, keyAlice, chains, aliceWire.Address(), charlieAddr, autoWatch)
+	bob := setupSwapClient(bobBus, keyBob, chains, bobWire.Address(), charlieAddr, autoWatch)
+	hub := setupSwapClient(hubBus, keyHub, chains, hubWire.Address(), charlieAddr, autoWatch)
 	alice.SetChallengeDuration(challengeDuration)
 	bob.SetChallengeDuration(challengeDuration)
 	hub.SetChallengeDuration(challengeDuration)

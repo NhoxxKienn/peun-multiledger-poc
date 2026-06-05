@@ -1,0 +1,17 @@
+{
+  "items": {
+    "sudt": {
+      "script_id": {
+        "hash_type": "data1",
+        "code_hash": "0x5f4bc1537c097f5549ea8fc12272b58e95d517b42c4fa9b781d167546caf4dee"
+      },
+      "cell_dep": {
+        "out_point": {
+          "tx_hash": "0x9de5059a081e8bc9306f0dfec387bbd88485b93be16506adb8426b5bb3f41462",
+          "index": "0x0"
+        },
+        "dep_type": "code"
+      }
+    }
+  }
+}

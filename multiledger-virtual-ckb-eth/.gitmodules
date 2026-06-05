@@ -1,3 +1,4 @@
-[submodule "multiledger-virtual-ckb-eth/chainckb/contracts"]
-	path = multiledger-virtual-ckb-eth/chainckb/contracts
-	url = https://github.com/perun-network/perun-ckb-contract
+[submodule "multiledger-virtual-ckb-eth/chainckb/contract"]
+path = chainckb/contract
+	url = https://github.com/Perun-Cross-chain-Virtual-Channel/perun-ckb-contract
+	branch = cross_chain_vc_fix

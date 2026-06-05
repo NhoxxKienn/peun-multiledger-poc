@@ -13,14 +13,21 @@
 // limitations under the License.
 
 // multiledger-virtual-optimistic demonstrates a multi-ledger virtual channel
-// between Alice and Bob routed via Hub, with NO attacker and NO coordinator.
-// Selects between two no-attacker flows via the -mode flag:
+// between Alice and Bob routed via Hub, with NO coordinator. Selects between
+// three flows via the -mode flag:
 //
 //	-mode=cooperative — mirrors TestMultiLedgerVirtualHappy: virtual settles
 //	                    off-chain (IsFinal=true), parents follow cooperatively.
 //	-mode=onchain     — mirrors TestMultiLedgerVirtualDispute: all four parent
 //	                    channel views are registered on-chain; the adjudicator
 //	                    recursively unwinds the virtual sub-channel at settle.
+//	-mode=attack      — stale-state-on-virtual attack: Bob disputes the Bob-Hub
+//	                    parent with a DIFFERENT virtual sub-state on each chain
+//	                    (vc1 on A, vc0 on B), so the virtual settles divergently
+//	                    and Bob over-withdraws. The CKB-free counterpart of
+//	                    multiledger-virtual-ckb-eth's attack; runs without any
+//	                    coordinator to motivate the recursive CoordinateVC defence
+//	                    in multiledger-virtual-coordinated.
 package main
 
 import (
@@ -63,14 +70,18 @@ const (
 )
 
 func main() {
-	mode := flag.String("mode", "cooperative", "settlement mode: cooperative | onchain")
+	mode := flag.String("mode", "cooperative", "settlement mode: cooperative | onchain | attack")
 	flag.Parse()
 
 	switch *mode {
-	case "cooperative", "onchain":
+	case "cooperative", "onchain", "attack":
 	default:
-		log.Fatalf("invalid -mode=%q; expected cooperative or onchain", *mode)
+		log.Fatalf("invalid -mode=%q; expected cooperative, onchain or attack", *mode)
 	}
+	// The attack relies on the two chains diverging: a live watcher would
+	// re-register the multi-ledger tree and re-sync both chains to one virtual
+	// version, so it is disabled for -mode=attack only.
+	autoWatch := *mode != "attack"
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -105,9 +116,9 @@ func main() {
 	hubDialer.Register(map[wallet.BackendID]wire.Address{ewallet.BackendID: bobWire.Address()}, bobWire.ID().String())
 
 	log.Println("Setting up Alice, Bob, Hub.")
-	alice := setupSwapClient(aliceBus, keyAlice, chains, aliceWire.Address())
-	bob := setupSwapClient(bobBus, keyBob, chains, bobWire.Address())
-	hub := setupSwapClient(hubBus, keyHub, chains, hubWire.Address())
+	alice := setupSwapClient(aliceBus, keyAlice, chains, aliceWire.Address(), autoWatch)
+	bob := setupSwapClient(bobBus, keyBob, chains, bobWire.Address(), autoWatch)
+	hub := setupSwapClient(hubBus, keyHub, chains, hubWire.Address(), autoWatch)
 	alice.SetChallengeDuration(challengeDuration)
 	bob.SetChallengeDuration(challengeDuration)
 	hub.SetChallengeDuration(challengeDuration)
@@ -147,44 +158,54 @@ func main() {
 	chBobAlice := bob.AcceptedChannel()
 	log.Printf("Virtual Alice-Bob opened, id=%x", chAliceBob.ID())
 
-	// Off-chain virtual update: Alice transfers 3 PRN on chain A to Bob and
-	// receives 3 PRN on chain B from Bob.  Alice=[2,8], Bob=[8,2].
-	virtualV1 := channel.Balances{
-		{big.NewInt(2), big.NewInt(8)},
-		{big.NewInt(8), big.NewInt(2)},
-	}
-	log.Println("Off-chain virtual update to v1 (Alice [2,8], Bob [8,2]).")
-	if err := chAliceBob.UpdateBalances(ctx, virtualV1); err != nil {
-		log.Fatalf("virtual v1 update: %v", err)
-	}
-	// Let Hub finish persisting the virtual sub-channel into its perun-client
-	// registry on BOTH parents (persistVirtualChannel runs async w.r.t. the
-	// proposer's OpenVirtualChannel return). This persist is what fires the
-	// OnNewChannel hook that starts Hub's watcher on the virtual proxy; the
-	// on-chain dispute below relies on that watcher being live before any parent
-	// is registered, so the multi-ledger re-register can supply the sub-channel
-	// state instead of a nil-Params one.
-	time.Sleep(500 * time.Millisecond)
+	if *mode == "attack" {
+		// The attack captures vc0, advances to vc1 itself, then disputes the
+		// Bob-Hub parent divergently across the two chains.
+		runAttack(ctx, bob, hub, chBobHub, chHubBob, chAliceBob, chBobAlice)
+	} else {
+		// Off-chain virtual update: Alice transfers 3 PRN on chain A to Bob and
+		// receives 3 PRN on chain B from Bob.  Alice=[2,8], Bob=[8,2].
+		virtualV1 := channel.Balances{
+			{big.NewInt(2), big.NewInt(8)},
+			{big.NewInt(8), big.NewInt(2)},
+		}
+		log.Println("Off-chain virtual update to v1 (Alice [2,8], Bob [8,2]).")
+		if err := chAliceBob.UpdateBalances(ctx, virtualV1); err != nil {
+			log.Fatalf("virtual v1 update: %v", err)
+		}
+		// Let Hub finish persisting the virtual sub-channel into its perun-client
+		// registry on BOTH parents (persistVirtualChannel runs async w.r.t. the
+		// proposer's OpenVirtualChannel return). This persist is what fires the
+		// OnNewChannel hook that starts Hub's watcher on the virtual proxy; the
+		// on-chain dispute below relies on that watcher being live before any
+		// parent is registered, so the multi-ledger re-register can supply the
+		// sub-channel state instead of a nil-Params one.
+		time.Sleep(500 * time.Millisecond)
 
-	switch *mode {
-	case "cooperative":
-		runCooperative(ctx, chAliceBob, chBobAlice, chHubAlice, chHubBob, chAliceHub, chBobHub)
-	case "onchain":
-		runOnChain(ctx, alice, bob, hub, chAliceHub, chBobHub, chHubAlice, chHubBob, chAliceBob)
+		switch *mode {
+		case "cooperative":
+			runCooperative(ctx, chAliceBob, chBobAlice, chHubAlice, chHubBob, chAliceHub, chBobHub)
+		case "onchain":
+			runOnChain(ctx, alice, bob, hub, chAliceHub, chBobHub, chHubAlice, chHubBob, chAliceBob)
+		}
 	}
 
 	bl.LogBalances("final", alice.WalletAddress(), bob.WalletAddress(), hub.WalletAddress())
 
-	fmt.Println()
-	fmt.Println("============================================================")
-	fmt.Printf("  OPTIMISTIC VIRTUAL CHANNEL — MODE: %s\n", *mode)
-	fmt.Println("============================================================")
-	fmt.Println("  Virtual v1: Alice [2,8] / Bob [8,2]; locked in two parents.")
-	fmt.Println("  Expected per-address net change (PRN):")
-	fmt.Println("    Alice: chain A -3, chain B +3   (Bob's mirror)")
-	fmt.Println("    Bob:   chain A +3, chain B -3")
-	fmt.Println("    Hub:   chain A  0, chain B  0   (parents net to zero)")
-	fmt.Println("============================================================")
+	// The attack prints its own divergent-outcome banner in runAttack; the
+	// generic optimistic summary below describes only the honest v1 outcome.
+	if *mode != "attack" {
+		fmt.Println()
+		fmt.Println("============================================================")
+		fmt.Printf("  OPTIMISTIC VIRTUAL CHANNEL — MODE: %s\n", *mode)
+		fmt.Println("============================================================")
+		fmt.Println("  Virtual v1: Alice [2,8] / Bob [8,2]; locked in two parents.")
+		fmt.Println("  Expected per-address net change (PRN):")
+		fmt.Println("    Alice: chain A -3, chain B +3   (Bob's mirror)")
+		fmt.Println("    Bob:   chain A +3, chain B -3")
+		fmt.Println("    Hub:   chain A  0, chain B  0   (parents net to zero)")
+		fmt.Println("============================================================")
+	}
 
 	alice.Shutdown()
 	bob.Shutdown()

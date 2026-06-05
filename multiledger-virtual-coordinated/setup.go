@@ -79,16 +79,17 @@ func deployContracts(chains []client.ChainConfig, fundedAddrs []common.Address) 
 //     co-signed resolution. The virtual channel itself carries no coordinator.
 //   - acceptAll=true so the Hub accepts both ledger parent proposals and the
 //     relayed virtual-channel proposal plus the sub-channel lock update.
-//   - autoWatch=true so every participant watches all of its channels; the
+//   - autoWatch so every participant watches all of its channels; the
 //     OnNewChannel hook in the client library also picks up the Hub's internal
 //     virtual proxy, which is what lets the multi-ledger re-register supply the
-//     sub-channel state during the dispute.
+//     sub-channel state during a dispute.
 func setupSwapClient(
 	bus wire.Bus,
 	privateKey string,
 	chains [2]client.ChainConfig,
 	waddress wire.Address,
 	coordinator common.Address,
+	autoWatch bool,
 ) *client.SwapClient {
 	k, err := crypto.HexToECDSA(privateKey)
 	if err != nil {
@@ -106,7 +107,7 @@ func setupSwapClient(
 		nil,         // no libp2p relay notifier; coordinator is driven in-process
 		coordinator, // wire Charlie's address into the parent channel params
 		true,        // acceptAll — Hub accepts ledger + virtual proposals and the lock update
-		true,        // autoWatch — every participant watches all its channels
+		autoWatch,   // watch all channels
 	)
 	if err != nil {
 		panic(err)

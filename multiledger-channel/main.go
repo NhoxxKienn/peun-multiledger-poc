@@ -93,12 +93,18 @@ func main() {
 	// Open channel, transact, close.
 	log.Println("Opening channel and depositing funds.")
 
-	var alicePRNChainA int64 = 20 // Alice puts 20 PRN from chain A in the channel.
-	var bobPRNChainB int64 = 50   // Bob puts 50 PRN from chain B in the channel.
-	// The balances that each party puts in the channel.
+	// Symmetric funding: both parties fund BOTH chains. In a multi-ledger channel
+	// a party can only be paid out on a chain it deposited into, so an asymmetric
+	// "Alice funds chain A, Bob funds chain B" split would leave the swapped funds
+	// stranded in the asset holders. Here each party funds both chains with
+	// unequal shares, and PerformSwap flips the two parties' shares per chain — a
+	// real cross-chain swap that settles cleanly on both chains.
+	//
+	//   chain A: Alice 20, Bob 5   -> after swap  Alice 5,  Bob 20
+	//   chain B: Alice 5,  Bob 20  -> after swap  Alice 20, Bob 5
 	balances := channel.Balances{
-		{big.NewInt(alicePRNChainA), big.NewInt(0)},
-		{big.NewInt(0), big.NewInt(bobPRNChainB)},
+		{big.NewInt(20), big.NewInt(5)},
+		{big.NewInt(5), big.NewInt(20)},
 	}
 
 	chAlice := alice.OpenChannel(bob.WireAddress(), balances)
