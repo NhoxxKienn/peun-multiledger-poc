@@ -70,6 +70,11 @@ exchange state via an intermediary (Ingrid) without an on-chain Alice ↔ Bob
 parent — instead the virtual channel hangs off the Alice ↔ Ingrid and
 Ingrid ↔ Bob parents. Safety reduces to the safety of those two parents.
 
+> The repo's [`multiledger-ckb-eth/`](multiledger-ckb-eth/README.md) module realises exactly the
+> attack/coordinator pair described in §2/§3 below — a plain CKB↔ETH parent (payment) channel,
+> no virtual layer — as the thesis's **Sc 1** (`-mode=attack`, divergent settlement) and
+> **Sc 2** (`-mode=coordinated`, parent-only `Coordinate` defence).
+
 ---
 
 ## 2. Attack model
@@ -1437,25 +1442,25 @@ libp2p relay to accept client notifications over circuit streams.
 
 ## 14. Key invariants
 
-| Layer              | Invariant                                                         | Enforcement                                           |
-| ------------------ | ----------------------------------------------------------------- | ----------------------------------------------------- |
-| ETH contract       | `coordinate()` requires prior `register()`                        | `coordinateSingle`: `"not registered"`                |
-| ETH contract       | `coordinate()` requires `block.timestamp ≥ dispute.timeout`       | `coordinateSingle`: `"refutation timeout not passed"` |
-| ETH contract       | Coordinator ECDSA sig required                                    | `Channel.validateCoordinatorSignature`                |
-| ETH contract       | `register()` rejected in COORDINATED phase                        | `registerSingle`: `"incorrect phase"`                 |
-| ETH contract       | Multi-ledger `conclude()` requires COORDINATED                    | `concludeSingle`: `"coordinated settlement required"` |
-| ETH contract       | Coordinator-eligible requires `coordinator != 0 && multiLedger`   | `MultiLedger.sol: isCoordinatedEligible`              |
+| Layer              | Invariant                                                                                                                                            | Enforcement                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| ETH contract       | `coordinate()` requires prior `register()`                                                                                                           | `coordinateSingle`: `"not registered"`                         |
+| ETH contract       | `coordinate()` requires `block.timestamp ≥ dispute.timeout`                                                                                          | `coordinateSingle`: `"refutation timeout not passed"`          |
+| ETH contract       | Coordinator ECDSA sig required                                                                                                                       | `Channel.validateCoordinatorSignature`                         |
+| ETH contract       | `register()` rejected in COORDINATED phase                                                                                                           | `registerSingle`: `"incorrect phase"`                          |
+| ETH contract       | Multi-ledger `conclude()` requires COORDINATED                                                                                                       | `concludeSingle`: `"coordinated settlement required"`          |
+| ETH contract       | Coordinator-eligible requires `coordinator != 0 && multiLedger`                                                                                      | `MultiLedger.sol: isCoordinatedEligible`                       |
 | ETH/CKB contract   | `coordinate` of a VC-locking parent must carry the virtual sub-state and a coordinator sig per sub-channel (`coordSigs` length = `1 + #subChannels`) | ETH `"subChannels too short"`; PCTS empty-`subChannels` reject |
-| CKB script (PCTS)  | `coordinate` cell requires prior `register` cell for that channel | tx rejected (PCTS phase guard)                        |
-| CKB script (PCTS)  | `coordinate` requires dispute window elapsed                      | tx rejected (PCTS timing guard)                       |
-| CKB script (PCTS)  | Coordinator signature in `CoordSig` witness must match params     | tx rejected (PCTS sig check)                          |
-| CKB script (PCTS)  | `register` rejected once channel cell is in COORDINATED state     | tx rejected (PCTS phase guard)                        |
-| CKB script (PFLS)  | Funds unlock requires parent channel CONCLUDED                    | tx rejected (PFLS phase guard)                        |
-| go-perun (multi)   | All chains coordinated concurrently; first error reported         | `multi.Coordinator.dispatch` (errgroup)               |
-| go-perun (client)  | `Settle` calls `ensureCoordinated` before `Withdraw`              | `client.Channel.Settle`                               |
-| go-perun (watcher) | Dispute replicated to all chains                                  | `watcher/local` multi-ledger path                     |
-| Timing (ETH)       | All timeouts use `block.timestamp` (seconds)                      | `Adjudicator.sol` (demos wait wall-clock; devnet auto-mines) |
-| Timing (CKB)       | Dispute timer `block.timestamp`-based; no fast-forward            | wall-clock waits in demos                             |
+| CKB script (PCTS)  | `coordinate` cell requires prior `register` cell for that channel                                                                                    | tx rejected (PCTS phase guard)                                 |
+| CKB script (PCTS)  | `coordinate` requires dispute window elapsed                                                                                                         | tx rejected (PCTS timing guard)                                |
+| CKB script (PCTS)  | Coordinator signature in `CoordSig` witness must match params                                                                                        | tx rejected (PCTS sig check)                                   |
+| CKB script (PCTS)  | `register` rejected once channel cell is in COORDINATED state                                                                                        | tx rejected (PCTS phase guard)                                 |
+| CKB script (PFLS)  | Funds unlock requires parent channel CONCLUDED                                                                                                       | tx rejected (PFLS phase guard)                                 |
+| go-perun (multi)   | All chains coordinated concurrently; first error reported                                                                                            | `multi.Coordinator.dispatch` (errgroup)                        |
+| go-perun (client)  | `Settle` calls `ensureCoordinated` before `Withdraw`                                                                                                 | `client.Channel.Settle`                                        |
+| go-perun (watcher) | Dispute replicated to all chains                                                                                                                     | `watcher/local` multi-ledger path                              |
+| Timing (ETH)       | All timeouts use `block.timestamp` (seconds)                                                                                                         | `Adjudicator.sol` (demos wait wall-clock; devnet auto-mines)   |
+| Timing (CKB)       | Dispute timer `block.timestamp`-based; no fast-forward                                                                                               | wall-clock waits in demos                                      |
 
 ### Timing diagram (defended sub-channel)
 
