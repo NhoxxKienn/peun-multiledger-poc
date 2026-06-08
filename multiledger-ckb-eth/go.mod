@@ -1,10 +1,11 @@
-module perun-multiledger-poc/multiledger-virtual-ckb-eth
+module perun-multiledger-poc/multiledger-ckb-eth
 
-go 1.24.0
+go 1.25.7
 
 toolchain go1.25.10
 
 require (
+	cross-chain-coordinator v0.0.0-00010101000000-000000000000
 	github.com/ethereum/go-ethereum v1.17.2
 	github.com/nervosnetwork/ckb-sdk-go/v2 v2.2.0
 	github.com/perun-network/perun-eth-backend v0.6.0
@@ -46,20 +47,22 @@ require (
 	go.opentelemetry.io/otel v1.40.0 // indirect
 	go.opentelemetry.io/otel/metric v1.40.0 // indirect
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
-	golang.org/x/crypto v0.44.0 // indirect
-	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	perun-multiledger-poc/eval v0.0.0
 	polycry.pt/poly-go v0.0.0-20220301085937-fb9d71b45a37 // indirect
 )
 
-replace perun.network/go-perun => github.com/NhoxxKienn/go-perun v0.0.0-20260526062537-a05990e2cb40
+replace perun.network/go-perun => github.com/NhoxxKienn/go-perun v0.0.0-20260604144715-46d216960570
 
 replace github.com/perun-network/perun-eth-backend => github.com/Perun-Cross-chain-Virtual-Channel/perun-eth-backend v0.6.1-0.20260603060223-82e88db70699
 
 replace perun.network/perun-ckb-backend => github.com/Perun-Cross-chain-Virtual-Channel/perun-ckb-backend v1.0.1-0.20260603103853-8759dbc4d423
 
 replace github.com/nervosnetwork/ckb-sdk-go/v2 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20260530044933-548463b5d86f
+
+replace cross-chain-coordinator => github.com/NhoxxKienn/cross-chain-coordinator v0.0.0-20260603100756-a409e48c369a
 
 replace perun-multiledger-poc/eval => ../eval

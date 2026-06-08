@@ -42,6 +42,7 @@ import (
 	ckbtest "perun.network/perun-ckb-backend/channel/test"
 	ckbaddress "perun.network/perun-ckb-backend/wallet/address"
 
+	"perun-multiledger-poc/eval"
 	"perun-multiledger-poc/multiledger-virtual-ckb-eth-coordinated/ethereumUtil"
 )
 
@@ -84,7 +85,14 @@ const (
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	// This module has a single flow (the recursive-coordination defence). The
+	// -mode flag is accepted only so the evaluation harness (bench/run.sh) can
+	// drive every scenario uniformly; the sole valid value is "defended".
+	mode := flag.String("mode", "defended", "settlement mode: defended")
 	flag.Parse()
+	if *mode != "defended" {
+		log.Fatalf("unknown -mode %q (this module only supports: defended)", *mode)
+	}
 
 	// Deploy the ETH Perun contracts (adjudicator + ETH asset holder).
 	log.Println("Deploying ETH contracts.")
@@ -145,12 +153,19 @@ func main() {
 	// without a watcher, since his own watcher would refute his own stale state.
 	bob.Client.SetAutoWatch(false)
 
-	// Log balances before.
+	// Evaluation-metrics bundle (a no-op unless EVAL_OUT is set). This module
+	// realises thesis Scenario 4 (coordinator active, with virtual sub-channel).
+	m := newMeters("virtual-ckb-eth-coordinated", "defended", "Sc4", chainURL, ckbRPCURL, ethAdjAddr.Hex(), ethAssetAddr.Hex())
+	m.config("challengeDurationS", attackChallenge)
+	m.config("ethChainID", chainID)
+
+	// Log balances before (and record them for the evaluation).
 	ethLog := ethereumUtil.NewBalanceLogger(chainURL)
 	ethLog.LogBalances(alice.Client.WalletEthAddress(), bob.Client.WalletEthAddress(), ingrid.Client.WalletEthAddress())
 	ckbLog := ethereumUtil.NewCKBBalanceLogger(ckbRPCURL)
 	ckbLog.LogBalances(alice.CkbAccount.Address().(*ckbaddress.Participant))
 	ckbLog.LogBalances(bob.CkbAccount.Address().(*ckbaddress.Participant))
+	recordBalances(m, "pre", alice, bob, ingrid, ckbLog)
 
 	// Open the two parent multi-ledger channels (coordinated) and the virtual one.
 	log.Println("Opening parent channel Alice <-> Ingrid (coordinated).")
@@ -168,17 +183,29 @@ func main() {
 	chBA := bob.Client.AcceptedChannel()
 	log.Printf("Virtual Alice-Bob opened, id=%x", chAB.ID())
 
-	runDefended(multiCoord, coordAcc, alice, bob, ingrid, chAB, chBA, chAI, chIA, chBI, chIB)
+	runDefended(m, multiCoord, coordAcc, alice, bob, ingrid, chAB, chBA, chAI, chIA, chBI, chIB)
 
-	// Log balances after.
+	// Log balances after (and record them for the evaluation).
 	ethLog.LogBalances(alice.Client.WalletEthAddress(), bob.Client.WalletEthAddress(), ingrid.Client.WalletEthAddress())
 	ckbLog.LogBalances(alice.CkbAccount.Address().(*ckbaddress.Participant))
 	ckbLog.LogBalances(bob.CkbAccount.Address().(*ckbaddress.Participant))
 	ckbLog.LogBalances(ingrid.CkbAccount.Address().(*ckbaddress.Participant))
+	recordBalances(m, "post", alice, bob, ingrid, ckbLog)
+	m.finish("ATTACK PREVENTED", true)
 
 	alice.Client.Shutdown()
 	bob.Client.Shutdown()
 	ingrid.Client.Shutdown()
+}
+
+// recordBalances snapshots Alice's, Bob's and Ingrid's ETH (native, wei) and CKB
+// (cell capacity, shannons) balances under the given phase ("pre"/"post"). The
+// intermediary (Ingrid) balances support the financial-neutrality observation.
+func recordBalances(m *meters, when string, alice, bob, ingrid *Participant, ckbLog ethereumUtil.CkbBalanceLogger) {
+	for _, p := range []*Participant{alice, bob, ingrid} {
+		m.balance(p.Name+"_eth_"+when, eval.ETHBalanceWei(chainURL, p.Client.WalletEthAddress().Hex()))
+		m.balance(p.Name+"_ckb_"+when, u64(ckbLog.Capacity(p.CkbAccount.Address().(*ckbaddress.Participant))))
+	}
 }
 
 // parseSUDTOwnerLockArg reads the SUDT owner lock hash the CKB devnet wrote to

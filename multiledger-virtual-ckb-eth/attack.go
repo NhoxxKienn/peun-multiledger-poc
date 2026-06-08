@@ -33,7 +33,7 @@ import (
 // vc1 on ETH — so the virtual channel settles divergently and pays Bob his
 // highest share on each chain. The recursive CoordinateVC defence in the
 // coordinated module pins one virtual version on both ledgers and prevents it.
-func runAttack(alice, bob, ingrid *Participant, chAB, chBA, chAI, chIA, chBI, chIB *client.PaymentChannel) {
+func runAttack(m *meters, alice, bob, ingrid *Participant, chAB, chBA, chAI, chIA, chBI, chIB *client.PaymentChannel) {
 	_ = alice
 	_ = chAI
 	_ = chIA
@@ -69,13 +69,17 @@ func runAttack(alice, bob, ingrid *Participant, chAB, chBA, chAI, chIA, chBI, ch
 	smap1 := channel.MakeStateMap()
 	smap1.Add(ss1.State)
 
+	m.version("register_ckb", uint64(ss0.State.Version))
+	m.version("register_eth", uint64(ss1.State.Version))
 	start := time.Now()
 
 	// Step 1: CKB — register parent B carrying the STALE virtual state vc0
 	// (Bob's CKB-favoured version), then wait out CKB's window in wall-clock time.
 	log.Printf("[attack] [+%5.1fs] step 1: register parent B on CKB with virtual vc0 (v%d).",
 		time.Since(start).Seconds(), ss0.State.Version)
-	if err := bob.CkbAdj.Register(ctx, parentReqBob, []channel.SignedState{ss0}); err != nil {
+	if err := m.ckbOp("register_ckb", func() error {
+		return bob.CkbAdj.Register(ctx, parentReqBob, []channel.SignedState{ss0})
+	}); err != nil {
 		log.Fatalf("[attack] CKB register: %v", err)
 	}
 	waitChallenge(start, attackChallenge, "CKB")
@@ -84,7 +88,9 @@ func runAttack(alice, bob, ingrid *Participant, chAB, chBA, chAI, chIA, chBI, ch
 	// vc1 (Bob's ETH-favoured version), then wait out ETH's window.
 	log.Printf("[attack] [+%5.1fs] step 2: register parent B on ETH with virtual vc1 (v%d).",
 		time.Since(start).Seconds(), ss1.State.Version)
-	if err := bob.EthAdj.Register(ctx, parentReqBob, []channel.SignedState{ss1}); err != nil {
+	if err := m.ethOp("register_eth", func() error {
+		return bob.EthAdj.Register(ctx, parentReqBob, []channel.SignedState{ss1})
+	}); err != nil {
 		log.Fatalf("[attack] ETH register: %v", err)
 	}
 	waitChallenge(start, attackChallenge, "ETH")
@@ -92,18 +98,20 @@ func runAttack(alice, bob, ingrid *Participant, chAB, chBA, chAI, chIA, chBI, ch
 	// Step 3: each ledger pays out the parent folding its locally registered
 	// virtual state — CKB at vc0, ETH at vc1.
 	log.Println("[attack] both dispute windows elapsed — withdrawing divergently.")
-	if err := bob.CkbAdj.Withdraw(ctx, parentReqBob, smap0); err != nil {
+	if err := m.ckbOp("conclude_ckb", func() error { return bob.CkbAdj.Withdraw(ctx, parentReqBob, smap0) }); err != nil {
 		log.Fatalf("[attack] Bob CKB withdraw: %v", err)
 	}
 	if err := ingrid.CkbAdj.Withdraw(ctx, parentReqIngrid, smap0); err != nil {
 		log.Fatalf("[attack] Ingrid CKB withdraw: %v", err)
 	}
-	if err := bob.EthAdj.Withdraw(ctx, parentReqBob, smap1); err != nil {
+	if err := m.ethOp("conclude_eth", func() error { return bob.EthAdj.Withdraw(ctx, parentReqBob, smap1) }); err != nil {
 		log.Fatalf("[attack] Bob ETH withdraw: %v", err)
 	}
 	if err := ingrid.EthAdj.Withdraw(ctx, parentReqIngrid, smap1); err != nil {
 		log.Fatalf("[attack] Ingrid ETH withdraw: %v", err)
 	}
+	m.version("conclude_ckb", uint64(ss0.State.Version))
+	m.version("conclude_eth", uint64(ss1.State.Version))
 
 	fmt.Println()
 	fmt.Println("============================================================")

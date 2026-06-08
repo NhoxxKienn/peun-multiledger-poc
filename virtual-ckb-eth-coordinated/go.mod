@@ -51,6 +51,7 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	perun-multiledger-poc/eval v0.0.0
 	polycry.pt/poly-go v0.0.0-20220301085937-fb9d71b45a37 // indirect
 )
 
@@ -63,3 +64,5 @@ replace perun.network/perun-ckb-backend => github.com/Perun-Cross-chain-Virtual-
 replace github.com/nervosnetwork/ckb-sdk-go/v2 => github.com/perun-network/ckb-sdk-go/v2 v2.2.1-0.20260530044933-548463b5d86f
 
 replace cross-chain-coordinator => github.com/NhoxxKienn/cross-chain-coordinator v0.0.0-20260603100756-a409e48c369a
+
+replace perun-multiledger-poc/eval => ../eval

@@ -44,6 +44,7 @@ import (
 	ckbtest "perun.network/perun-ckb-backend/channel/test"
 	ckbaddress "perun.network/perun-ckb-backend/wallet/address"
 
+	"perun-multiledger-poc/eval"
 	"perun-multiledger-poc/multiledger-virtual-ckb-eth/client"
 	"perun-multiledger-poc/multiledger-virtual-ckb-eth/ethereumUtil"
 )
@@ -145,12 +146,20 @@ func main() {
 		}
 	}
 
-	// Log balances before.
+	// Evaluation-metrics bundle (a no-op unless EVAL_OUT is set). The attack mode
+	// realises thesis Scenario 3 (VC attack without coordinator).
+	thesisSc := map[string]string{"attack": "Sc3"}[*mode]
+	m := newMeters("multiledger-virtual-ckb-eth", *mode, thesisSc, chainURL, ckbRPCURL, ethAdjAddr.Hex(), ethAssetAddr.Hex())
+	m.config("challengeDurationS", attackChallenge)
+	m.config("ethChainID", chainID)
+
+	// Log balances before (and record them for the evaluation).
 	ethLog := ethereumUtil.NewBalanceLogger(chainURL)
 	ethLog.LogBalances(alice.Client.WalletEthAddress(), bob.Client.WalletEthAddress(), ingrid.Client.WalletEthAddress())
 	ckbLog := ethereumUtil.NewCKBBalanceLogger(ckbRPCURL)
 	ckbLog.LogBalances(alice.CkbAccount.Address().(*ckbaddress.Participant))
 	ckbLog.LogBalances(bob.CkbAccount.Address().(*ckbaddress.Participant))
+	recordBalances(m, "pre", alice, bob, ingrid, ckbLog)
 
 	// Open the two parent multi-ledger ledger channels (Alice-Ingrid, Bob-Ingrid).
 	log.Println("Opening parent channel Alice <-> Ingrid.")
@@ -169,22 +178,37 @@ func main() {
 	chBA := bob.Client.AcceptedChannel()
 	log.Printf("Virtual Alice-Bob opened, id=%x", chAB.ID())
 
+	var outcome string
 	switch *mode {
 	case "cooperative":
 		runCooperative(chAB, chBA, chAI, chIA, chBI, chIB)
+		outcome = "COOPERATIVE OK"
 	case "attack":
-		runAttack(alice, bob, ingrid, chAB, chBA, chAI, chIA, chBI, chIB)
+		runAttack(m, alice, bob, ingrid, chAB, chBA, chAI, chIA, chBI, chIB)
+		outcome = "ATTACK SUCCEEDED"
 	}
 
-	// Log balances after.
+	// Log balances after (and record them for the evaluation).
 	ethLog.LogBalances(alice.Client.WalletEthAddress(), bob.Client.WalletEthAddress(), ingrid.Client.WalletEthAddress())
 	ckbLog.LogBalances(alice.CkbAccount.Address().(*ckbaddress.Participant))
 	ckbLog.LogBalances(bob.CkbAccount.Address().(*ckbaddress.Participant))
 	ckbLog.LogBalances(ingrid.CkbAccount.Address().(*ckbaddress.Participant))
+	recordBalances(m, "post", alice, bob, ingrid, ckbLog)
+	m.finish(outcome, true)
 
 	alice.Client.Shutdown()
 	bob.Client.Shutdown()
 	ingrid.Client.Shutdown()
+}
+
+// recordBalances snapshots Alice's, Bob's and Ingrid's ETH (native, wei) and CKB
+// (cell capacity, shannons) balances under the given phase ("pre"/"post"). The
+// intermediary (Ingrid) balances support the financial-neutrality observation.
+func recordBalances(m *meters, when string, alice, bob, ingrid *Participant, ckbLog ethereumUtil.CkbBalanceLogger) {
+	for _, p := range []*Participant{alice, bob, ingrid} {
+		m.balance(p.Name+"_eth_"+when, eval.ETHBalanceWei(chainURL, p.Client.WalletEthAddress().Hex()))
+		m.balance(p.Name+"_ckb_"+when, u64(ckbLog.Capacity(p.CkbAccount.Address().(*ckbaddress.Participant))))
+	}
 }
 
 // runCooperative mirrors the upstream happy path: finalize the virtual channel

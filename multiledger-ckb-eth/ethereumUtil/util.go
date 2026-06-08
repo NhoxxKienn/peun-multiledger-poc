@@ -19,8 +19,6 @@ import (
 	"log"
 	"math/big"
 
-	"perun-multiledger-poc/multiledger-virtual-ckb-eth-coordinated/client"
-
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -31,6 +29,7 @@ import (
 	ethchannel "github.com/perun-network/perun-eth-backend/channel"
 	"github.com/perun-network/perun-eth-backend/wallet/simple"
 	swallet "github.com/perun-network/perun-eth-backend/wallet/simple"
+	"perun-multiledger-poc/multiledger-ckb-eth/client"
 	"perun.network/perun-ckb-backend/wallet/address"
 )
 

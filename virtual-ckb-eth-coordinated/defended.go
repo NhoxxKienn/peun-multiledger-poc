@@ -46,6 +46,7 @@ import (
 // explicit vc1 state-map. The flow is serial (trigger → wait → coordinate → wait
 // → withdraw) so the demo never races the live watcher for the CKB channel cell.
 func runDefended(
+	m *meters,
 	multiCoord *multi.Coordinator,
 	coordAcc map[wallet.BackendID]wallet.Account,
 	alice, bob, ingrid *Participant,
@@ -68,6 +69,8 @@ func runDefended(
 
 	parentReqBob := pclient.NewTestChannel(chBI.GetChannel()).AdjudicatorReq()
 
+	m.version("register_ckb", uint64(ss0.State.Version))
+	m.version("register_eth", uint64(ss0.State.Version))
 	start := time.Now()
 
 	// ── Phase 1: ATTACK TRIGGER ──────────────────────────────────────────────
@@ -75,13 +78,17 @@ func runDefended(
 	// in the defended flow; everything after is honest watchers + the coordinator.
 	log.Printf("[defended] [+%5.1fs] phase 1: Bob registers the STALE vc0 (v%d) on CKB.",
 		time.Since(start).Seconds(), ss0.State.Version)
-	if err := bob.CkbAdj.Register(ctx, parentReqBob, []channel.SignedState{ss0}); err != nil {
+	if err := m.ckbOp("register_ckb", func() error {
+		return bob.CkbAdj.Register(ctx, parentReqBob, []channel.SignedState{ss0})
+	}); err != nil {
 		log.Fatalf("[defended] Bob CKB register: %v", err)
 	}
 	waitChallenge(start, attackChallenge, "CKB")
 	log.Printf("[defended] [+%5.1fs] phase 1: Bob registers the STALE vc0 (v%d) on ETH.",
 		time.Since(start).Seconds(), ss0.State.Version)
-	if err := bob.EthAdj.Register(ctx, parentReqBob, []channel.SignedState{ss0}); err != nil {
+	if err := m.ethOp("register_eth", func() error {
+		return bob.EthAdj.Register(ctx, parentReqBob, []channel.SignedState{ss0})
+	}); err != nil {
 		log.Fatalf("[defended] Bob ETH register: %v", err)
 	}
 	waitChallenge(start, attackChallenge, "ETH")
@@ -108,7 +115,10 @@ func runDefended(
 	}
 	log.Printf("[defended] [+%5.1fs] phase 2: coordinator runs RECURSIVE CoordinateVC (parent + vc1) on both ledgers.",
 		time.Since(start).Seconds())
-	if err := multiCoord.Coordinate(ctx, parentReqBob, []channel.SignedState{vc1}, []wallet.Sig{parentCoordSig, vcCoordSig}); err != nil {
+	m.version("coordinate", uint64(ss1.State.Version))
+	if err := m.bothOp("coordinate", func() error {
+		return multiCoord.Coordinate(ctx, parentReqBob, []channel.SignedState{vc1}, []wallet.Sig{parentCoordSig, vcCoordSig})
+	}); err != nil {
 		log.Fatalf("[defended] recursive CoordinateVC: %v", err)
 	}
 	waitChallenge(start, attackChallenge, "CKB")
