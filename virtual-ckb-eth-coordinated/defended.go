@@ -52,9 +52,6 @@ func runDefended(
 	alice, bob, ingrid *Participant,
 	chAB, chBA, chAI, chIA, chBI, chIB *client.PaymentChannel,
 ) {
-	_ = alice
-	_ = chAI
-	_ = chIA
 	ctx := context.Background()
 
 	// Capture vc0, advance V to the canonical vc1 — the same witnesses Bob abuses
@@ -134,20 +131,93 @@ func runDefended(
 	parentReqIngrid := pclient.NewTestChannel(chIB.GetChannel()).AdjudicatorReq()
 	parentReqIngrid.Secondary = true
 
-	log.Printf("[defended] [+%5.1fs] phase 3: withdrawing uniformly — both ledgers fold the coordinated vc1 (v%d).",
+	// Both ledgers seal (conclude+withdraw) the SAME coordinated version, so record
+	// it under conclude_ckb / conclude_eth — the evidence behind the thesis's "both
+	// adjudicators seal at version N" and Table 9.1 conclude-cost row. Each withdraw
+	// is bracketed through m.ckbOp / m.ethOp (gas/cycles + latency), exactly like the
+	// register and coordinate phases, so a run's JSONL fully evidences the conclude
+	// path. NOTE: ss1 is named "vc1" but its State.Version is 2 — it is reached by
+	// TWO updates from the funding sub-state (SendEthPayment + SendCKBPayment), so
+	// the folded conclude version is the thesis's sigma^vc_2 (see DELIVERY_NOTE.md).
+	m.version("conclude_ckb", uint64(ss1.State.Version))
+	m.version("conclude_eth", uint64(ss1.State.Version))
+	log.Printf("[defended] [+%5.1fs] phase 3: withdrawing uniformly — both ledgers fold the coordinated vc1 (state version=%d).",
 		time.Since(start).Seconds(), ss1.State.Version)
-	if err := bob.CkbAdj.Withdraw(ctx, parentReqBob, smap1); err != nil {
+	if err := m.ckbOp("conclude_ckb", func() error {
+		return bob.CkbAdj.Withdraw(ctx, parentReqBob, smap1)
+	}); err != nil {
 		log.Fatalf("[defended] Bob CKB withdraw: %v", err)
 	}
-	if err := ingrid.CkbAdj.Withdraw(ctx, parentReqIngrid, smap1); err != nil {
+	if err := m.ckbOp("conclude_ckb", func() error {
+		return ingrid.CkbAdj.Withdraw(ctx, parentReqIngrid, smap1)
+	}); err != nil {
 		log.Fatalf("[defended] Ingrid CKB withdraw: %v", err)
 	}
-	if err := bob.EthAdj.Withdraw(ctx, parentReqBob, smap1); err != nil {
+	if err := m.ethOp("conclude_eth", func() error {
+		return bob.EthAdj.Withdraw(ctx, parentReqBob, smap1)
+	}); err != nil {
 		log.Fatalf("[defended] Bob ETH withdraw: %v", err)
 	}
-	if err := ingrid.EthAdj.Withdraw(ctx, parentReqIngrid, smap1); err != nil {
+	if err := m.ethOp("conclude_eth", func() error {
+		return ingrid.EthAdj.Withdraw(ctx, parentReqIngrid, smap1)
+	}); err != nil {
 		log.Fatalf("[defended] Ingrid ETH withdraw: %v", err)
 	}
+
+	// ── Phase 4: CLOSE the Alice–Ingrid parent leg ───────────────────────────
+	// The contested settlement above only touched the Bob–Ingrid parent and the
+	// virtual. The Alice–Ingrid parent (chAI/chIA) was opened and funded but never
+	// settled, so the intermediary's funded allocation there — plus the virtual
+	// share locked from Alice's side — stays trapped inside an open channel. Left
+	// open, I's measured wallet delta is non-zero BY CONSTRUCTION (~-5 ETH / -155
+	// CKB), and a neutrality violation can never be falsified in a leg we leave open.
+	//
+	// We cannot close it with the plain high-level PaymentChannel.Settle: that path
+	// first sets IsFinal off-chain, which a parent with a locked virtual sub-channel
+	// rejects, and the Alice–Ingrid parent CARRIES THE COORDINATOR, so go-perun's
+	// Channel.Settle routes through ensureCoordinated and blocks on a CoordinatedEvent
+	// that nobody drives. Instead we reuse the same high-level multi-backend primitive
+	// Phase 2 uses — multiCoord.Coordinate pins vc1 on the (still-locked) Alice–Ingrid
+	// parent across both ledgers — then both sides withdraw folding that same vc1.
+	// Ingrid only ever saw the funding vc0, so (exactly as in Phase 3) her recursive
+	// Settle machine cannot gather vc1; we therefore withdraw via the backend
+	// adjudicator with the explicit vc1 state-map rather than the high-level Settle.
+	// The flow stays serial — after the live watchers have already settled — so it
+	// never races them for the CKB channel cell.
+	parentReqAlice := pclient.NewTestChannel(chAI.GetChannel()).AdjudicatorReq()
+	parentReqIngridA := pclient.NewTestChannel(chIA.GetChannel()).AdjudicatorReq()
+	parentReqIngridA.Secondary = true
+
+	parentACoordSig, err := channel.Sign(coordAcc[ethBackendID], parentReqAlice.Tx.State, ethBackendID)
+	if err != nil {
+		log.Fatalf("[defended] coordinator signing Alice-Ingrid parent: %v", err)
+	}
+	vcACoordSig, err := channel.Sign(coordAcc[ethBackendID], ss1.State, ethBackendID)
+	if err != nil {
+		log.Fatalf("[defended] coordinator signing vc1 for Alice-Ingrid: %v", err)
+	}
+	log.Printf("[defended] [+%5.1fs] phase 4: coordinator pins vc1 (v%d) on the Alice-Ingrid parent; both sides then withdraw.",
+		time.Since(start).Seconds(), ss1.State.Version)
+	if err := multiCoord.Coordinate(ctx, parentReqAlice, []channel.SignedState{vc1}, []wallet.Sig{parentACoordSig, vcACoordSig}); err != nil {
+		log.Fatalf("[defended] Alice-Ingrid recursive CoordinateVC: %v", err)
+	}
+	waitChallenge(start, attackChallenge, "CKB")
+	waitChallenge(start, attackChallenge, "ETH")
+
+	if err := alice.CkbAdj.Withdraw(ctx, parentReqAlice, smap1); err != nil {
+		log.Fatalf("[defended] Alice CKB withdraw: %v", err)
+	}
+	if err := ingrid.CkbAdj.Withdraw(ctx, parentReqIngridA, smap1); err != nil {
+		log.Fatalf("[defended] Ingrid CKB withdraw (Alice-Ingrid): %v", err)
+	}
+	if err := alice.EthAdj.Withdraw(ctx, parentReqAlice, smap1); err != nil {
+		log.Fatalf("[defended] Alice ETH withdraw: %v", err)
+	}
+	if err := ingrid.EthAdj.Withdraw(ctx, parentReqIngridA, smap1); err != nil {
+		log.Fatalf("[defended] Ingrid ETH withdraw (Alice-Ingrid): %v", err)
+	}
+	log.Printf("[defended] [+%5.1fs] phase 4: Alice-Ingrid parent settled — every channel I participates in is now closed.",
+		time.Since(start).Seconds())
 
 	fmt.Println()
 	fmt.Println("============================================================")
