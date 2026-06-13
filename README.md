@@ -51,9 +51,20 @@ state without restarting nodes between unrelated demos.
 | [`multiledger-virtual-coordinated/`](multiledger-virtual-coordinated/README.md) | Virtual channel via Hub: coordinator co-signs the cross-chain dispute                               | Yes (in-process via `cross-chain-coordinator/backends.SetupMultiCoordinator`) | ~15–20 s |
 | [`multiledger-virtual-ckb-eth/`](multiledger-virtual-ckb-eth/README.md)         | CKB↔ETH virtual channel: honest or stale-state-on-virtual attack (`-mode=`); settles divergently    | No                                                                            | ~30–40 s |
 | [`virtual-ckb-eth-coordinated/`](virtual-ckb-eth-coordinated/README.md)         | CKB↔ETH virtual channel: attack prevented by recursive `CoordinateVC` (watchtowers on)              | Yes (in-process via `cross-chain-coordinator/backends.SetupMultiCoordinator`) | ~40–60 s |
+| [`multiledger-ckb-eth/`](multiledger-ckb-eth/README.md)                         | CKB↔ETH **payment** (parent) channel: cooperative, divergent-settlement attack, or coordinator defence (`-mode=`) | Yes, in `coordinated` mode (in-process via `cross-chain-coordinator/backends.SetupMultiCoordinator`) | ~30–50 s |
 
 The attack model and coordinator design are documented in
 [`MULTILEDGER_ATTACK_POC.md`](MULTILEDGER_ATTACK_POC.md).
+
+## Evaluation harness
+
+`eval/` is a stdlib-only metrics module (raw JSON-RPC, no go-perun imports) that each scenario can
+import via `replace perun-multiledger-poc/eval => ../eval`; it records per-phase ETH gas / CKB
+cycles / latency / state versions / balances to one JSONL line per run when `EVAL_OUT` is set
+(`go run .` is unaffected otherwise). `bench/run.sh <module-dir> <mode> <N>` drives N runs of a
+scenario and appends to `bench/results/<module>-<mode>.jsonl`; `bench/aggregate` reads those files
+and emits `bench/results/tables.md` with median/min/max/std-dev tables (Groups A–D) for the
+Chapter 9 evaluation — see `chapter9_data_handover.md`.
 
 ## Quick start
 

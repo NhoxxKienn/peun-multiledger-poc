@@ -127,3 +127,22 @@ func (l CkbBalanceLogger) LogBalances(participant *address.Participant) {
 	ckbAmount := capacityResp.Capacity
 	log.Println("CKB balance", participant.PubKey, ckbAmount)
 }
+
+// Capacity returns the participant's total CKB cell capacity (shannons). Used by
+// the evaluation harness to record pre/post balances.
+func (l CkbBalanceLogger) Capacity(participant *address.Participant) uint64 {
+	ctx := context.Background()
+	lockScript := &ckbtypes.Script{
+		CodeHash: participant.UnlockScript.CodeHash,
+		HashType: participant.UnlockScript.HashType,
+		Args:     participant.UnlockScript.Args,
+	}
+	capacityResp, err := l.dialer.GetCellsCapacity(ctx, &indexer.SearchKey{
+		Script:     lockScript,
+		ScriptType: ckbtypes.ScriptTypeLock,
+	})
+	if err != nil {
+		return 0
+	}
+	return uint64(capacityResp.Capacity)
+}

@@ -1,0 +1,4 @@
+# Generated evaluation data (per-run records, run logs, aggregated tables).
+*.jsonl
+*.md
+logs/
